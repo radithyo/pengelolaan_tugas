@@ -1,106 +1,100 @@
-# CRUD Produk — Next.js + MySQL (Aiven) + Vercel
+# RuangTugas — Next.js, MySQL Aiven, dan Vercel
 
-Aplikasi CRUD sederhana (Create, Read, Update, Delete) untuk data "produk",
-dibangun dengan Next.js App Router dan database MySQL, siap deploy ke Vercel
-dengan database di Aiven.
-
-## Struktur Project
-
-```
-app/
-  api/products/route.js         -> GET (list), POST (create)
-  api/products/[id]/route.js    -> GET (detail), PUT (update), DELETE
-  page.js                       -> Halaman utama (tabel + form)
-  layout.js
-  globals.css
-lib/
-  db.js                         -> Koneksi pool MySQL (support SSL Aiven)
-schema.sql                      -> Skema tabel `products`
-.env.local.example              -> Contoh environment variables
-```
-
-## 1. Buat Database di Aiven
-
-1. Login ke https://aiven.io lalu buat service baru → pilih **MySQL** → plan **Free**.
-2. Pilih region terdekat, tunggu status menjadi "Running".
-3. Buka tab **Overview**, catat: `Host`, `Port`, `User` (biasanya `avnadmin`), `Password`, `Database name` (default `defaultdb`).
-4. Download **CA Certificate** (`ca.pem`) dari halaman yang sama.
-5. Buat tabelnya. Bisa lewat Aiven Console (query editor) atau CLI MySQL:
-   ```bash
-   mysql --host=<HOST> --port=<PORT> --user=<USER> --password=<PASSWORD> \
-     --database=<DBNAME> --ssl-mode=REQUIRED < schema.sql
-   ```
-
-## 2. Setup Project Secara Lokal
-
-```bash
-npm install
-cp .env.local.example .env.local
-```
-
-Isi `.env.local` dengan kredensial Aiven kamu:
-
-```
-DB_HOST=your-service.aivencloud.com
-DB_PORT=xxxxx
-DB_USER=avnadmin
-DB_PASSWORD=xxxxx
-DB_NAME=defaultdb
-DB_CA_CERT=<base64 dari ca.pem>
-```
-
-Generate nilai `DB_CA_CERT` dari file `ca.pem` yang tadi didownload:
-
-```bash
-base64 -i ca.pem | tr -d '\n'
-```
-
-Copy hasilnya (satu baris panjang) ke `.env.local`.
-
-Jalankan secara lokal:
-
-```bash
-npm run dev
-```
-
-Buka http://localhost:3000 — kamu akan melihat form tambah produk dan tabel daftar produk.
-
-## 3. Push ke GitHub
-
-```bash
-git init
-git add .
-git commit -m "Initial commit: CRUD produk Next.js + MySQL"
-git branch -M main
-git remote add origin https://github.com/username/nama-repo.git
-git push -u origin main
-```
-
-Pastikan `.env.local` **tidak** ikut ter-commit (sudah otomatis diabaikan lewat `.gitignore`).
-
-## 4. Deploy ke Vercel
-
-1. Login ke https://vercel.com dengan akun GitHub.
-2. Klik **Add New → Project**, pilih repo yang baru saja di-push.
-3. Di bagian **Environment Variables**, tambahkan variabel yang sama persis seperti di `.env.local`:
-   - `DB_HOST`
-   - `DB_PORT`
-   - `DB_USER`
-   - `DB_PASSWORD`
-   - `DB_NAME`
-   - `DB_CA_CERT`
-4. Klik **Deploy**.
-5. Setelah selesai, buka URL yang diberikan Vercel (`https://nama-project.vercel.app`) — aplikasi CRUD sudah bisa dipakai.
+RuangTugas adalah aplikasi pengelolaan tugas berbahasa Indonesia. Aplikasi ini
+menyediakan CRUD tugas dan kategori, status, prioritas, pencarian, serta tenggat
+waktu. Next.js menangani antarmuka dan API; data disimpan di MySQL Aiven.
 
 ## Fitur
 
-- **Create**: tambah produk baru lewat form (nama, deskripsi, harga)
-- **Read**: daftar semua produk otomatis dimuat saat halaman dibuka
-- **Update**: klik "Edit" pada baris produk untuk mengubah data
-- **Delete**: klik "Hapus" untuk menghapus produk (dengan konfirmasi)
+- Buat, lihat, edit, dan hapus tugas.
+- Kelola kategori dengan warna; kategori terhubung ke tugas melalui foreign key.
+- Atur status (belum dikerjakan, sedang dikerjakan, selesai), prioritas, dan tenggat.
+- Cari tugas dan filter berdasarkan status atau kategori.
+- Tata letak responsif untuk desktop dan ponsel.
 
-## Catatan
+## Struktur data
 
-- Free tier Aiven MySQL bisa nonaktif otomatis setelah periode idle tertentu — kamu akan mendapat notifikasi email sebelum itu terjadi.
-- Kalau ingin menambah kolom atau tabel baru, cukup ubah `schema.sql` dan sesuaikan query di `app/api/products/`.
-- Untuk validasi input yang lebih ketat atau autentikasi (login admin), beri tahu saya — bisa ditambahkan.
+- `task_categories` menyimpan nama dan warna kategori.
+- `tasks` menyimpan tugas dan memiliki `category_id` yang mengacu ke
+  `task_categories.id`. Relasi menggunakan `ON DELETE SET NULL`, jadi menghapus
+  kategori tidak menghapus tugas.
+- Definisi tabel dan kategori awal ada di [`schema.sql`](./schema.sql).
+- Jika database yang sudah ada masih memakai tabel `categories` versi lama,
+  jalankan [`migrate_existing_database.sql`](./migrate_existing_database.sql)
+  satu kali sebagai gantinya. Migrasi ini menyalin kategori lama, menambahkan
+  prioritas, dan memperbarui relasi kategori pada tugas.
+
+## Menyiapkan database Aiven
+
+1. Buat layanan MySQL di [Aiven](https://aiven.io) dan tunggu sampai statusnya
+   **Running**.
+2. Dari halaman layanan, catat host, port, user, password, dan nama database.
+   Unduh CA certificate jika layanan mewajibkan TLS.
+3. Jika ini database baru, jalankan `schema.sql` pada database Aiven
+   menggunakan Aiven Query Editor atau klien MySQL. Untuk database lama yang
+   sudah mempunyai `tasks` dengan foreign key ke `categories`, jalankan
+   `migrate_existing_database.sql` satu kali sebagai gantinya:
+
+   ```sh
+   mysql --host=<HOST> --port=<PORT> --user=<USER> --password \
+     --database=<DBNAME> < schema.sql
+   ```
+
+   Gunakan mode TLS yang diwajibkan konfigurasi layanan Aiven saat memakai klien
+   MySQL.    Skrip skema membuat tabel baru dengan `CREATE TABLE IF NOT EXISTS`.
+   Migrasi database lama adalah migrasi satu kali dan tidak untuk dijalankan
+   ulang.
+
+## Menjalankan secara lokal
+
+1. Pasang dependensi: `npm install`.
+2. Salin `.env.local.example` menjadi `.env.local`, lalu isi kredensial database.
+3. Jika Aiven menyediakan CA certificate, encode isi `ca.pem` sebagai satu
+   baris Base64 dan masukkan sebagai `DB_CA_CERT`:
+
+   ```sh
+   base64 -i ca.pem
+   ```
+
+4. Jalankan `npm run dev`, lalu buka <http://localhost:3000>.
+
+Variabel yang dibutuhkan:
+
+```text
+DB_HOST=
+DB_PORT=
+DB_USER=
+DB_PASSWORD=
+DB_NAME=
+DB_CA_CERT=
+```
+
+`.env.local` hanya untuk lokal dan tidak boleh dimasukkan ke Git.
+
+## Deploy ke Vercel
+
+1. Push repository ke GitHub dan impor repository tersebut dari dashboard Vercel.
+2. Pada **Project Settings → Environment Variables**, tambahkan keenam variabel
+   database di atas untuk environment yang akan digunakan.
+3. Pastikan host/database Aiven mengizinkan koneksi dari deployment Vercel dan
+   konfigurasi TLS/CA certificate sesuai pengaturan layanan.
+4. Deploy. Jalankan `schema.sql` pada Aiven satu kali sebelum menggunakan
+   aplikasi. API berjalan sebagai Next.js Route Handlers di Vercel dan memakai
+   koneksi database server-side.
+
+Jangan pernah menaruh kredensial database di variabel `NEXT_PUBLIC_*` atau
+mengunggah `.env.local`/sertifikat privat ke repository.
+
+## API
+
+| Method | Endpoint | Fungsi |
+|---|---|---|
+| GET, POST | `/api/tasks` | Daftar dan membuat tugas |
+| GET, PUT, DELETE | `/api/tasks/:id` | Detail, mengubah, dan menghapus tugas |
+| GET, POST | `/api/categories` | Daftar dan membuat kategori |
+| PUT, DELETE | `/api/categories/:id` | Mengubah dan menghapus kategori |
+
+> **Catatan akses:** aplikasi ini belum memiliki login atau pembatasan pengguna.
+> Siapa pun yang dapat mengakses URL deployment dapat mengubah data melalui UI
+> maupun API. Tambahkan autentikasi/otorisasi sebelum memakai URL publik untuk
+> data yang tidak boleh diubah oleh pengunjung lain.
